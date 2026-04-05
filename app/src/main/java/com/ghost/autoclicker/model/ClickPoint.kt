@@ -17,7 +17,14 @@ data class ClickPoint(
 enum class ClickMode {
     SINGLE,   // 单击
     LONG_PRESS, // 长按
-    DOUBLE     // 双击
+    DOUBLE;     // 双击
+
+    val label: String
+        get() = when (this) {
+            SINGLE -> "单击"
+            LONG_PRESS -> "长按"
+            DOUBLE -> "双击"
+        }
 }
 
 data class GlobalConfig(

@@ -43,10 +43,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addPoint(point: ClickPoint = ClickPoint()) {
         clickPoints.add(point)
-        ClickAccessibilityService.instance?.let {
-            it.globalConfig = it.globalConfig.copy()
-            it.updateRunning()
-        }
+        ClickAccessibilityService.instance?.updateRunning()
     }
 
     fun removePoint(id: Long) {
@@ -64,10 +61,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopAll() {
-        ClickAccessibilityService.instance?.stopClicking()
-        ClickAccessibilityService.instance?.let {
-            it.globalConfig = it.globalConfig.copy(isRunning = false)
-        }
+        val svc = ClickAccessibilityService.instance ?: return
+        svc.stopClicking()
+        ClickAccessibilityService.globalConfig = ClickAccessibilityService.globalConfig.copy(isRunning = false)
     }
 
     override fun onCleared() {

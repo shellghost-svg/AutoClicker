@@ -4,20 +4,16 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
-import android.widget.LinearLayout
-import com.ghost.autoclicker.R
 import com.ghost.autoclicker.service.ClickAccessibilityService
 
 class FloatWindowManager(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var floatView: View? = null
-    private var panelView: View? = null
 
     fun show() {
         if (floatView != null) return
@@ -28,7 +24,6 @@ class FloatWindowManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        // 小圆点按钮
         val dot = ImageView(context).apply {
             setImageResource(android.R.drawable.ic_media_play)
             setBackgroundColor(0xCC333333.toInt())
@@ -47,7 +42,6 @@ class FloatWindowManager(private val context: Context) {
             y = 200
         }
 
-        // 拖动
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -87,13 +81,14 @@ class FloatWindowManager(private val context: Context) {
 
     private fun toggleClicking(dot: ImageView) {
         val svc = ClickAccessibilityService.instance ?: return
-        svc.globalConfig = svc.globalConfig.copy(isRunning = !svc.globalConfig.isRunning)
+        val wasRunning = ClickAccessibilityService.globalConfig.isRunning
+        ClickAccessibilityService.globalConfig = ClickAccessibilityService.globalConfig.copy(isRunning = !wasRunning)
         dot.setImageResource(
-            if (svc.globalConfig.isRunning) android.R.drawable.ic_media_pause
+            if (!wasRunning) android.R.drawable.ic_media_pause
             else android.R.drawable.ic_media_play
         )
         dot.setBackgroundColor(
-            if (svc.globalConfig.isRunning) 0xCC4CAF50.toInt()
+            if (!wasRunning) 0xCC4CAF50.toInt()
             else 0xCC333333.toInt()
         )
         svc.updateRunning()
@@ -101,7 +96,6 @@ class FloatWindowManager(private val context: Context) {
 
     fun hide() {
         floatView?.let { windowManager.removeView(it); floatView = null }
-        panelView?.let { windowManager.removeView(it); panelView = null }
     }
 
     fun isShowing() = floatView != null

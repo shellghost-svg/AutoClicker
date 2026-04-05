@@ -1,0 +1,8 @@
+R_DEF: Internal format may change without notice
+local
+string accessibility_description
+string app_name
+string overlay_not_granted
+string service_not_enabled
+style Theme.AutoClicker
+xml accessibility_service_config

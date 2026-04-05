@@ -23,7 +23,7 @@ fun PointEditDialog(
     onConfirm: (ClickPoint) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var label by remember { mutableStateOf(point.label) }
+    var pointLabel by remember { mutableStateOf(point.label) }
     var x by remember { mutableStateOf(point.x.toString()) }
     var y by remember { mutableStateOf(point.y.toString()) }
     var delayMs by remember { mutableStateOf(point.delayMs.toString()) }
@@ -57,8 +57,8 @@ fun PointEditDialog(
 
                 // 名称
                 OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
+                    value = pointLabel,
+                    onValueChange = { pointLabel = it },
                     label = { Text("名称") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -165,7 +165,7 @@ fun PointEditDialog(
                     onClick = {
                         onConfirm(
                             point.copy(
-                                label = label.ifBlank { point.label },
+                                label = pointLabel.ifBlank { point.label },
                                 x = x.toIntOrNull() ?: point.x,
                                 y = y.toIntOrNull() ?: point.y,
                                 delayMs = delayMs.toLongOrNull() ?: point.delayMs,

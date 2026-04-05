@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import com.ghost.autoclicker.service.ClickAccessibilityService
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -294,9 +295,3 @@ fun BottomBar(vm: MainViewModel, onAdd: () -> Unit, onStop: () -> Unit) {
     }
 }
 
-private val ClickMode.label: String
-    get() = when (this) {
-        ClickMode.SINGLE -> "单击"
-        ClickMode.LONG_PRESS -> "长按"
-        ClickMode.DOUBLE -> "双击"
-    }
