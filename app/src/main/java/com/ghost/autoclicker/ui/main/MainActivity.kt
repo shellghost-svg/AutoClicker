@@ -45,17 +45,26 @@ fun MainScreen(vm: MainViewModel) {
     var showPresetDialog by remember { mutableStateOf(false) }
     var showTargetAppDialog by remember { mutableStateOf(false) }
 
-    // 定时刷新
+    // 定时刷新 service 状态
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(500)
+            vm.refreshServiceStatus()
             vm.floatWindow.updateStatus()
             vm.pointMarkers.updateRunningState()
-            // Check for long-press edit requests from markers
             val editId = vm.consumeEditRequest()
             if (editId != null) {
-                editingPoint = vm.clickPoints.find { it.id == editId }
+                editingPoint = vm.points.find { it.id == editId }
             }
+        }
+    }
+
+    // 当悬浮窗显示/隐藏时刷新标记
+    LaunchedEffect(vm.floatWindow.isShowing()) {
+        if (vm.floatWindow.isShowing()) {
+            vm.pointMarkers.updateAllMarkers(vm.points)
+        } else {
+            vm.pointMarkers.removeAllMarkers()
         }
     }
 
@@ -65,8 +74,7 @@ fun MainScreen(vm: MainViewModel) {
                 title = { Text("👻 连点器", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 actions = {
-                    // 目标APP指示
-                    vm.targetPackage?.let { pkg ->
+                    vm.targetPackage.value?.let { pkg ->
                         Surface(color = Color(0xFFE3F2FD), shape = MaterialTheme.shapes.small) {
                             Text("🎯 $pkg", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 11.sp)
                         }
@@ -83,7 +91,7 @@ fun MainScreen(vm: MainViewModel) {
             StatusBanner(vm)
 
             // 运行状态条
-            if (ClickAccessibilityService.globalConfig.isRunning) {
+            if (vm.isRunning.value) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     color = Color(0xFFC8E6C9),
@@ -92,14 +100,14 @@ fun MainScreen(vm: MainViewModel) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("🟢 运行中", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         Spacer(Modifier.width(12.dp))
-                        Text("已执行 ${vm.totalClicks} 次", fontSize = 12.sp, color = Color(0xFF555555))
+                        Text("已执行 ${vm.totalClicks.value} 次", fontSize = 12.sp, color = Color(0xFF555555))
                     }
                 }
                 Spacer(Modifier.height(8.dp))
             }
 
-            // 点击点列表
-            if (vm.clickPoints.isEmpty()) {
+            // 点击点列表 - 用 vm.points（Compose observable）
+            if (vm.points.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("还没有点击点", color = Color.Gray, fontSize = 16.sp)
@@ -112,7 +120,7 @@ fun MainScreen(vm: MainViewModel) {
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    items(vm.clickPoints, key = { it.id }) { point ->
+                    items(vm.points, key = { it.id }) { point ->
                         PointCard(
                             point = point,
                             onEdit = { editingPoint = point },
@@ -158,7 +166,7 @@ fun MainScreen(vm: MainViewModel) {
 
     if (showTargetAppDialog) {
         TargetAppDialog(
-            currentPackage = vm.targetPackage,
+            currentPackage = vm.targetPackage.value,
             onConfirm = { vm.setTargetPackage(it) },
             onDismiss = { showTargetAppDialog = false }
         )
@@ -167,22 +175,19 @@ fun MainScreen(vm: MainViewModel) {
 
 @Composable
 fun StatusBanner(vm: MainViewModel) {
-    val serviceOk = vm.isServiceRunning
-    val overlayOk = vm.isOverlayGranted
-
     Column(Modifier.padding(16.dp)) {
         StatusRow(
-            ok = serviceOk,
-            text = if (serviceOk) "无障碍服务已开启" else "无障碍服务未开启",
-            onClick = { if (!serviceOk) vm.openAccessibilitySettings() },
-            showButton = !serviceOk
+            ok = vm.isServiceRunning.value,
+            text = if (vm.isServiceRunning.value) "无障碍服务已开启" else "无障碍服务未开启",
+            onClick = { if (!vm.isServiceRunning.value) vm.openAccessibilitySettings() },
+            showButton = !vm.isServiceRunning.value
         )
         Spacer(Modifier.height(8.dp))
         StatusRow(
-            ok = overlayOk,
-            text = if (overlayOk) "悬浮窗权限已授予" else "悬浮窗权限未授予",
-            onClick = { if (!overlayOk) vm.openOverlaySettings() },
-            showButton = !overlayOk
+            ok = vm.isOverlayGranted.value,
+            text = if (vm.isOverlayGranted.value) "悬浮窗权限已授予" else "悬浮窗权限未授予",
+            onClick = { if (!vm.isOverlayGranted.value) vm.openOverlaySettings() },
+            showButton = !vm.isOverlayGranted.value
         )
     }
 }
@@ -269,7 +274,7 @@ fun BottomBar(vm: MainViewModel, onAdd: () -> Unit, onPreset: () -> Unit, onStop
                     Spacer(Modifier.width(4.dp))
                     Text("添加点击点", fontSize = 13.sp)
                 }
-                if (ClickAccessibilityService.globalConfig.isRunning) {
+                if (vm.isRunning.value) {
                     Button(
                         onClick = onStop,
                         modifier = Modifier.weight(1f),
