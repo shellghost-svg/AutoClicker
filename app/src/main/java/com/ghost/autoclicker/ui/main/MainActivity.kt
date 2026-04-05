@@ -4,11 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import com.ghost.autoclicker.service.ClickAccessibilityService
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,8 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ghost.autoclicker.model.ClickMode
-import com.ghost.autoclicker.model.ClickPoint
+import com.ghost.autoclicker.model.*
+import com.ghost.autoclicker.service.ClickAccessibilityService
 import com.ghost.autoclicker.ui.theme.AutoClickerTheme
 
 class MainActivity : ComponentActivity() {
@@ -29,18 +29,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AutoClickerTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     MainScreen(vm)
                 }
             }
-        }
-
-        // 监听服务状态
-        ClickAccessibilityService.onStatusChanged = { running ->
-            // Compose 重组会自动读取 isServiceRunning
         }
     }
 }
@@ -50,39 +42,70 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(vm: MainViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingPoint by remember { mutableStateOf<ClickPoint?>(null) }
+    var showPresetDialog by remember { mutableStateOf(false) }
+    var showTargetAppDialog by remember { mutableStateOf(false) }
 
-    // 定时刷新服务状态
+    // 定时刷新
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(500)
+            vm.floatWindow.updateStatus()
+            vm.pointMarkers.updateRunningState()
+            // Check for long-press edit requests from markers
+            val editId = vm.consumeEditRequest()
+            if (editId != null) {
+                editingPoint = vm.clickPoints.find { it.id == editId }
+            }
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("连点器", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                title = { Text("👻 连点器", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                actions = {
+                    // 目标APP指示
+                    vm.targetPackage?.let { pkg ->
+                        Surface(color = Color(0xFFE3F2FD), shape = MaterialTheme.shapes.small) {
+                            Text("🎯 $pkg", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    IconButton(onClick = { showTargetAppDialog = true }) {
+                        Icon(Icons.Default.Apps, contentDescription = "限定APP")
+                    }
+                }
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-        ) {
-            // 状态栏
+        Column(Modifier.padding(padding).fillMaxSize()) {
             StatusBanner(vm)
+
+            // 运行状态条
+            if (ClickAccessibilityService.globalConfig.isRunning) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    color = Color(0xFFC8E6C9),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🟢 运行中", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                        Spacer(Modifier.width(12.dp))
+                        Text("已执行 ${vm.totalClicks} 次", fontSize = 12.sp, color = Color(0xFF555555))
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
 
             // 点击点列表
             if (vm.clickPoints.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("还没有点击点，点击下方添加", color = Color.Gray, fontSize = 16.sp)
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("还没有点击点", color = Color.Gray, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text("点击下方「添加」或「预设」快速开始", color = Color.Gray.copy(0.6f), fontSize = 13.sp)
+                    }
                 }
             } else {
                 LazyColumn(
@@ -94,11 +117,9 @@ fun MainScreen(vm: MainViewModel) {
                             point = point,
                             onEdit = { editingPoint = point },
                             onDelete = { vm.removePoint(point.id) },
-                            onToggle = { updated ->
-                                vm.updatePoint(point.copy(enabled = updated))
-                            }
+                            onToggle = { vm.updatePoint(point.copy(enabled = it)) }
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(Modifier.height(8.dp))
                     }
                 }
             }
@@ -107,32 +128,39 @@ fun MainScreen(vm: MainViewModel) {
             BottomBar(
                 vm = vm,
                 onAdd = { showAddDialog = true },
+                onPreset = { showPresetDialog = true },
                 onStop = { vm.stopAll() }
             )
         }
     }
 
-    // 添加对话框
     if (showAddDialog) {
-        PointEditDialog(
-            point = ClickPoint(),
-            onConfirm = {
-                vm.addPoint(it)
-                showAddDialog = false
+        PointEditDialog(point = ClickPoint(), isNew = true, onConfirm = {
+            vm.addPoint(it); showAddDialog = false
+        }, onDismiss = { showAddDialog = false })
+    }
+
+    editingPoint?.let { point ->
+        PointEditDialog(point = point, onConfirm = {
+            vm.updatePoint(it); editingPoint = null
+        }, onDismiss = { editingPoint = null })
+    }
+
+    if (showPresetDialog) {
+        PresetDialog(
+            onSelect = { preset ->
+                vm.loadPreset(preset)
+                showPresetDialog = false
             },
-            onDismiss = { showAddDialog = false }
+            onDismiss = { showPresetDialog = false }
         )
     }
 
-    // 编辑对话框
-    editingPoint?.let { point ->
-        PointEditDialog(
-            point = point,
-            onConfirm = {
-                vm.updatePoint(it)
-                editingPoint = null
-            },
-            onDismiss = { editingPoint = null }
+    if (showTargetAppDialog) {
+        TargetAppDialog(
+            currentPackage = vm.targetPackage,
+            onConfirm = { vm.setTargetPackage(it) },
+            onDismiss = { showTargetAppDialog = false }
         )
     }
 }
@@ -142,78 +170,45 @@ fun StatusBanner(vm: MainViewModel) {
     val serviceOk = vm.isServiceRunning
     val overlayOk = vm.isOverlayGranted
 
-    Column(modifier = Modifier.padding(16.dp)) {
-        // 无障碍服务状态
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    if (serviceOk) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                    MaterialTheme.shapes.small
-                )
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                if (serviceOk) Icons.Default.CheckCircle else Icons.Default.Error,
-                contentDescription = null,
-                tint = if (serviceOk) Color(0xFF4CAF50) else Color(0xFFF44336),
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                if (serviceOk) "无障碍服务已开启" else "无障碍服务未开启",
-                fontSize = 13.sp
-            )
-            if (!serviceOk) {
-                Spacer(modifier = Modifier.weight(1f))
-                TextButton(onClick = { vm.openAccessibilitySettings() }) {
-                    Text("去开启", fontSize = 13.sp)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 悬浮窗权限
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    if (overlayOk) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                    MaterialTheme.shapes.small
-                )
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                if (overlayOk) Icons.Default.CheckCircle else Icons.Default.Error,
-                contentDescription = null,
-                tint = if (overlayOk) Color(0xFF4CAF50) else Color(0xFFF44336),
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                if (overlayOk) "悬浮窗权限已授予" else "悬浮窗权限未授予",
-                fontSize = 13.sp
-            )
-            if (!overlayOk) {
-                Spacer(modifier = Modifier.weight(1f))
-                TextButton(onClick = { vm.openOverlaySettings() }) {
-                    Text("去开启", fontSize = 13.sp)
-                }
-            }
-        }
+    Column(Modifier.padding(16.dp)) {
+        StatusRow(
+            ok = serviceOk,
+            text = if (serviceOk) "无障碍服务已开启" else "无障碍服务未开启",
+            onClick = { if (!serviceOk) vm.openAccessibilitySettings() },
+            showButton = !serviceOk
+        )
+        Spacer(Modifier.height(8.dp))
+        StatusRow(
+            ok = overlayOk,
+            text = if (overlayOk) "悬浮窗权限已授予" else "悬浮窗权限未授予",
+            onClick = { if (!overlayOk) vm.openOverlaySettings() },
+            showButton = !overlayOk
+        )
     }
 }
 
 @Composable
-fun PointCard(
-    point: ClickPoint,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onToggle: (Boolean) -> Unit
-) {
+fun StatusRow(ok: Boolean, text: String, onClick: () -> Unit, showButton: Boolean) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (ok) Color(0xFFE8F5E9) else Color(0xFFFFEBEE), MaterialTheme.shapes.small)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (ok) Icons.Default.CheckCircle else Icons.Default.Error,
+            null,
+            tint = if (ok) Color(0xFF4CAF50) else Color(0xFFF44336),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        if (showButton) TextButton(onClick = onClick) { Text("去开启", fontSize = 13.sp) }
+    }
+}
+
+@Composable
+fun PointCard(point: ClickPoint, onEdit: () -> Unit, onDelete: () -> Unit, onToggle: (Boolean) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -221,77 +216,131 @@ fun PointCard(
             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 开关
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = point.enabled, onCheckedChange = onToggle)
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // 信息
-            Column(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
                 Text(point.label, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    "(${point.x}, ${point.y})  ${point.delayMs}ms/次  ${point.clickMode.label}",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
+                Spacer(Modifier.height(2.dp))
+                val info = buildString {
+                    append("(${point.x}, ${point.y})")
+                    append(" ${point.delayMs}ms/次")
+                    append(" ${point.clickMode.label}")
+                    if (point.clickMode == ClickMode.SWIPE) append("→(${point.swipeEndX},${point.swipeEndY})")
+                    if (point.maxRepeat > 0) append(" ×${point.maxRepeat}")
+                }
+                Text(info, fontSize = 12.sp, color = Color.Gray)
                 if (point.posOffsetPx > 0 || point.delayRandomMs > 0) {
                     Text(
                         buildString {
-                            if (point.posOffsetPx > 0) append("位置偏移±${point.posOffsetPx}px ")
-                            if (point.delayRandomMs > 0) append("时间偏移±${point.delayRandomMs}ms")
+                            if (point.posOffsetPx > 0) append("位置±${point.posOffsetPx}px ")
+                            if (point.delayRandomMs > 0) append("时间±${point.delayRandomMs}ms")
                         },
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "编辑", Modifier.size(20.dp)) }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "删除", Modifier.size(20.dp)) }
+        }
+    }
+}
 
-            // 操作按钮
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(20.dp))
+@Composable
+fun BottomBar(vm: MainViewModel, onAdd: () -> Unit, onPreset: () -> Unit, onStop: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), tonalElevation = 3.dp, shadowElevation = 8.dp) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { vm.toggleFloatWindow() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.TouchApp, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (vm.floatWindow.isShowing()) "隐藏悬浮窗" else "显示悬浮窗", fontSize = 13.sp)
+                }
+                OutlinedButton(onClick = onPreset, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Bookmark, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("预设", fontSize = 13.sp)
+                }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(20.dp))
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAdd, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("添加点击点", fontSize = 13.sp)
+                }
+                if (ClickAccessibilityService.globalConfig.isRunning) {
+                    Button(
+                        onClick = onStop,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                    ) {
+                        Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("停止", fontSize = 13.sp)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun BottomBar(vm: MainViewModel, onAdd: () -> Unit, onStop: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedButton(
-                onClick = { vm.toggleFloatWindow() },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.TouchApp, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(if (vm.floatWindow.isShowing()) "隐藏悬浮窗" else "显示悬浮窗")
+fun PresetDialog(onSelect: (Preset) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("快捷预设") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { preset ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(preset) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(preset.icon, fontSize = 24.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(preset.name, fontWeight = FontWeight.Medium)
+                                Text(preset.description, fontSize = 12.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
             }
-            Button(
-                onClick = onAdd,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("添加点击点")
-            }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
 }
 
+@Composable
+fun TargetAppDialog(currentPackage: String?, onConfirm: (String?) -> Unit, onDismiss: () -> Unit) {
+    var pkg by remember { mutableStateOf(currentPackage ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("限定目标APP") },
+        text = {
+            Column {
+                Text("输入APP包名，连点器只在该APP内运行。留空则不限制。", fontSize = 13.sp, color = Color.Gray)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pkg, onValueChange = { pkg = it },
+                    label = { Text("包名（如 com.tencent.mm）") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                if (currentPackage != null) {
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { pkg = "" }) { Text("清除限制") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(pkg.ifBlank { null })
+                onDismiss()
+            }) { Text("确认") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}

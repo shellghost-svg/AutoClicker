@@ -20,6 +20,7 @@ import com.ghost.autoclicker.model.ClickPoint
 @Composable
 fun PointEditDialog(
     point: ClickPoint,
+    isNew: Boolean = false,
     onConfirm: (ClickPoint) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -31,156 +32,148 @@ fun PointEditDialog(
     var posOffsetPx by remember { mutableStateOf(point.posOffsetPx.toString()) }
     var clickMode by remember { mutableStateOf(point.clickMode) }
     var longPressDuration by remember { mutableStateOf(point.longPressDurationMs.toString()) }
-    var maxRepeat by remember { mutableStateOf(point.maxRepeat.toString()) }
+    var maxRepeat by remember { mutableStateOf(if (point.maxRepeat < 0) "" else point.maxRepeat.toString()) }
+    // 滑动参数
+    var swipeEndX by remember { mutableStateOf(point.swipeEndX.toString()) }
+    var swipeEndY by remember { mutableStateOf(point.swipeEndY.toString()) }
+    var swipeDuration by remember { mutableStateOf(point.swipeDurationMs.toString()) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
+        Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
+                modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())
             ) {
-                // 标题
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("编辑点击点", fontSize = 18.sp)
+                    Text(if (isNew) "添加点击点" else "编辑点击点", fontSize = 18.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
-                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "关闭") }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
-                // 名称
                 OutlinedTextField(
-                    value = pointLabel,
-                    onValueChange = { pointLabel = it },
-                    label = { Text("名称") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    value = pointLabel, onValueChange = { pointLabel = it },
+                    label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // 坐标
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = x,
-                        onValueChange = { x = it },
-                        label = { Text("X 坐标") },
-                        modifier = Modifier.weight(1f),
+                        value = x, onValueChange = { x = it.filter { c -> c.isDigit() } },
+                        label = { Text("X 坐标") }, modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                     OutlinedTextField(
-                        value = y,
-                        onValueChange = { y = it },
-                        label = { Text("Y 坐标") },
-                        modifier = Modifier.weight(1f),
+                        value = y, onValueChange = { y = it.filter { c -> c.isDigit() } },
+                        label = { Text("Y 坐标") }, modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // 点击间隔
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = delayMs,
-                        onValueChange = { delayMs = it },
-                        label = { Text("间隔(ms)") },
-                        modifier = Modifier.weight(1f),
+                        value = delayMs, onValueChange = { delayMs = it.filter { c -> c.isDigit() } },
+                        label = { Text("间隔(ms)") }, modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                     OutlinedTextField(
-                        value = delayRandomMs,
-                        onValueChange = { delayRandomMs = it },
-                        label = { Text("时间偏移±ms") },
-                        modifier = Modifier.weight(1f),
+                        value = delayRandomMs, onValueChange = { delayRandomMs = it.filter { c -> c.isDigit() } },
+                        label = { Text("时间偏移±ms") }, modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        supportingText = { Text("每次间隔随机抖动", fontSize = 11.sp) }
+                        supportingText = { Text("随机抖动", fontSize = 11.sp) }
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // 位置偏移
                 OutlinedTextField(
-                    value = posOffsetPx,
-                    onValueChange = { posOffsetPx = it },
-                    label = { Text("位置偏移±px") },
-                    modifier = Modifier.fillMaxWidth(),
+                    value = posOffsetPx, onValueChange = { posOffsetPx = it.filter { c -> c.isDigit() || c == '-' } },
+                    label = { Text("位置偏移±px") }, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     supportingText = { Text("模拟手指抖动，防检测", fontSize = 11.sp) }
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
                 // 点击模式
                 Text("点击模式", fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ClickMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = clickMode == mode,
-                            onClick = { clickMode = mode },
-                            label = { Text(mode.label) }
-                        )
+                        FilterChip(selected = clickMode == mode, onClick = { clickMode = mode }, label = { Text(mode.label) })
                     }
                 }
 
                 // 长按时长
                 if (clickMode == ClickMode.LONG_PRESS) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = longPressDuration,
-                        onValueChange = { longPressDuration = it },
-                        label = { Text("长按时长(ms)") },
-                        modifier = Modifier.fillMaxWidth(),
+                        value = longPressDuration, onValueChange = { longPressDuration = it.filter { c -> c.isDigit() } },
+                        label = { Text("长按时长(ms)") }, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // 滑动终点和时长
+                if (clickMode == ClickMode.SWIPE) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("滑动终点", fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = swipeEndX, onValueChange = { swipeEndX = it.filter { c -> c.isDigit() } },
+                            label = { Text("终点X") }, modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = swipeEndY, onValueChange = { swipeEndY = it.filter { c -> c.isDigit() } },
+                            label = { Text("终点Y") }, modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = swipeDuration, onValueChange = { swipeDuration = it.filter { c -> c.isDigit() } },
+                        label = { Text("滑动时长(ms)") }, modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
 
-                // 重复次数
+                Spacer(Modifier.height(12.dp))
+
                 OutlinedTextField(
-                    value = maxRepeat,
-                    onValueChange = { maxRepeat = it },
-                    label = { Text("重复次数") },
-                    modifier = Modifier.fillMaxWidth(),
+                    value = maxRepeat, onValueChange = { maxRepeat = it.filter { c -> c.isDigit() || c == '-' } },
+                    label = { Text("重复次数") }, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    supportingText = { Text("-1 或留空 = 无限循环", fontSize = 11.sp) }
+                    supportingText = { Text("留空=无限循环", fontSize = 11.sp) }
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(Modifier.height(20.dp))
 
-                // 确认按钮
                 Button(
                     onClick = {
                         onConfirm(
                             point.copy(
                                 label = pointLabel.ifBlank { point.label },
-                                x = x.toIntOrNull() ?: point.x,
-                                y = y.toIntOrNull() ?: point.y,
-                                delayMs = delayMs.toLongOrNull() ?: point.delayMs,
-                                delayRandomMs = delayRandomMs.toLongOrNull() ?: 0,
-                                posOffsetPx = posOffsetPx.toIntOrNull() ?: 0,
+                                x = x.toIntOrNull()?.coerceIn(0, 4096) ?: point.x,
+                                y = y.toIntOrNull()?.coerceIn(0, 4096) ?: point.y,
+                                delayMs = delayMs.toLongOrNull()?.coerceIn(10, 60_000) ?: point.delayMs,
+                                delayRandomMs = delayRandomMs.toLongOrNull()?.coerceIn(0, 30_000) ?: 0,
+                                posOffsetPx = posOffsetPx.toIntOrNull()?.coerceIn(0, 100) ?: 0,
                                 clickMode = clickMode,
-                                longPressDurationMs = longPressDuration.toLongOrNull() ?: 500,
-                                maxRepeat = maxRepeat.toIntOrNull() ?: -1
+                                longPressDurationMs = longPressDuration.toLongOrNull()?.coerceIn(50, 10_000) ?: 500,
+                                maxRepeat = maxRepeat.toIntOrNull() ?: -1,
+                                swipeEndX = swipeEndX.toIntOrNull()?.coerceIn(0, 4096) ?: point.swipeEndX,
+                                swipeEndY = swipeEndY.toIntOrNull()?.coerceIn(0, 4096) ?: point.swipeEndY,
+                                swipeDurationMs = swipeDuration.toLongOrNull()?.coerceIn(50, 5000) ?: 300,
                             )
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("确认")
-                }
+                ) { Text("确认") }
             }
         }
     }

@@ -1,22 +1,30 @@
 package com.ghost.autoclicker.ui.float
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.ghost.autoclicker.service.ClickAccessibilityService
 
 class FloatWindowManager(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var floatView: View? = null
+    private var countText: TextView? = null
+    private var statusText: TextView? = null
 
+    @SuppressLint("ClickableViewAccessibility")
     fun show() {
         if (floatView != null) return
+
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -24,11 +32,35 @@ class FloatWindowManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val dot = ImageView(context).apply {
-            setImageResource(android.R.drawable.ic_media_play)
-            setBackgroundColor(0xCC333333.toInt())
-            setPadding(16, 16, 16, 16)
+        // 主容器
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xDD222222.toInt())
+            setPadding(12, 8, 12, 8)
+            gravity = Gravity.CENTER
         }
+
+        // 状态文字
+        val statusTv = TextView(context).apply {
+            text = "▶ 未启动"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+        statusText = statusTv
+
+        // 计数文字
+        val countTv = TextView(context).apply {
+            text = "0 次"
+            setTextColor(0xAAFFFFFF.toInt())
+            textSize = 10f
+            gravity = Gravity.CENTER
+        }
+        countText = countTv
+
+        container.addView(statusTv)
+        container.addView(countTv)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -48,7 +80,7 @@ class FloatWindowManager(private val context: Context) {
         var initialTouchY = 0f
         var moved = false
 
-        dot.setOnTouchListener { _, event ->
+        container.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -61,41 +93,48 @@ class FloatWindowManager(private val context: Context) {
                 MotionEvent.ACTION_MOVE -> {
                     params.x = initialX + (event.rawX - initialTouchX).toInt()
                     params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(dot, params)
+                    windowManager.updateViewLayout(container, params)
                     moved = true
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) {
-                        toggleClicking(dot)
-                    }
+                    if (!moved) toggleClicking(container)
                     true
                 }
                 else -> false
             }
         }
 
-        floatView = dot
-        windowManager.addView(dot, params)
+        floatView = container
+        windowManager.addView(container, params)
     }
 
-    private fun toggleClicking(dot: ImageView) {
+    fun updateStatus() {
+        val running = ClickAccessibilityService.globalConfig.isRunning
+        val clicks = ClickAccessibilityService.globalConfig.totalClicks
+
+        statusText?.text = if (running) "⏸ 运行中" else "▶ 未启动"
+        statusText?.setTextColor(if (running) 0xFF66BB6A.toInt() else 0xFFFFFFFF.toInt())
+        countText?.text = "$clicks 次"
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun toggleClicking(container: LinearLayout) {
         val svc = ClickAccessibilityService.instance ?: return
         val wasRunning = ClickAccessibilityService.globalConfig.isRunning
-        ClickAccessibilityService.globalConfig = ClickAccessibilityService.globalConfig.copy(isRunning = !wasRunning)
-        dot.setImageResource(
-            if (!wasRunning) android.R.drawable.ic_media_pause
-            else android.R.drawable.ic_media_play
+        ClickAccessibilityService.globalConfig = ClickAccessibilityService.globalConfig.copy(
+            isRunning = !wasRunning,
+            totalClicks = if (!wasRunning) 0 else ClickAccessibilityService.globalConfig.totalClicks
         )
-        dot.setBackgroundColor(
-            if (!wasRunning) 0xCC4CAF50.toInt()
-            else 0xCC333333.toInt()
-        )
+
+        updateStatus()
         svc.updateRunning()
     }
 
     fun hide() {
         floatView?.let { windowManager.removeView(it); floatView = null }
+        countText = null
+        statusText = null
     }
 
     fun isShowing() = floatView != null
