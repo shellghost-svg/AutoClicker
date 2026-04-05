@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">连点器</string>
+    <string name="accessibility_description">模拟屏幕点击，需要在设置中开启无障碍权限后使用。</string>
+    <string name="service_not_enabled">无障碍服务未开启，请先授权</string>
+    <string name="overlay_not_granted">悬浮窗权限未授予，请先开启</string>
+</resources>
