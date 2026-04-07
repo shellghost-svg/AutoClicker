@@ -3,6 +3,7 @@ package com.ghost.autoclicker.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.app.Notification
+import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -217,6 +218,8 @@ class ClickAccessibilityService : AccessibilityService() {
 
         val finalX = (point.x + offsetX).toFloat().coerceIn(0f, 2000f)
         val finalY = (point.y + offsetY).toFloat().coerceIn(0f, 2000f)
+
+        Log.w("AutoClick", "performClick: point(${point.x},${point.y}) → gesture($finalX,$finalY) offset=($offsetX,$offsetY) mode=${point.clickMode}")
 
         when (point.clickMode) {
             ClickMode.SINGLE -> click(finalX, finalY)

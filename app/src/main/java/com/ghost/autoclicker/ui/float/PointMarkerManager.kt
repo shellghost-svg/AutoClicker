@@ -22,13 +22,15 @@ import com.ghost.autoclicker.service.ClickAccessibilityService
 /**
  * 点击点悬浮标记管理器
  *
- * 坐标系说明：
- * - ClickPoint.x/y = 屏幕绝对坐标（与 GestureDescription 一致，y=0 在屏幕最顶部）
- * - WindowManager.LayoutParams.x/y = 窗口参数（Gravity.TOP 时 y=0 在状态栏下方）
- * - 两者差值 = screenOffset（通常等于状态栏高度，Android 12+ 约 128px）
- * - View.getLocationOnScreen() 返回的是屏幕绝对坐标 ← 与 GestureDescription 一致
+ * 坐标系核心逻辑：
+ * - ClickPoint.x/y = 屏幕绝对坐标（与 GestureDescription 一致）
+ * - WindowManager params.y ≠ 屏幕y（Gravity.TOP 在 Android 12+ 偏移了一个状态栏高度）
+ * - getLocationOnScreen() 返回屏幕绝对坐标
+ * - screenOffset = getLocationOnScreen().y - params.y，在首个 marker 添加时自动测量
  *
- * 所有坐标转换都基于 screenOffset，该值在首个 marker 创建时通过 getLocationOnScreen 校准。
+ * 所有坐标转换统一使用 screenOffset：
+ *   params.y = screenY - size/2 - screenOffset
+ *   screenY  = params.y + screenOffset + size/2
  */
 class PointMarkerManager(private val context: Context) {
 
@@ -37,13 +39,14 @@ class PointMarkerManager(private val context: Context) {
     private val markers = mutableMapOf<Long, MarkerEntry>()
 
     /**
-     * 屏幕偏移量：getLocationOnScreen().y - params.y
-     * 在 Android 12+ 上等于状态栏高度（~128px）
-     * 屏幕绝对坐标 = params.y + screenOffset
-     * params.y = 屏幕绝对坐标 - screenOffset
+     * 屏幕偏移量，在首个 marker 添加后通过 getLocationOnScreen 自动测量。
+     * 典型值：Android 12+ 上等于状态栏高度（~128px）
      */
     private var screenOffset: Int = 0
-    private var offsetCalibrated = false
+
+    /** 诊断信息，供外部读取 */
+    var diagnosticInfo: String = ""
+        private set
 
     data class MarkerEntry(
         val view: View,
@@ -73,46 +76,14 @@ class PointMarkerManager(private val context: Context) {
     private val density: Float
         get() = context.resources.displayMetrics.density
 
-    /**
-     * 屏幕绝对坐标 → params.y
-     */
     private fun screenYToParamsY(screenY: Int, size: Int): Int {
         return screenY - size / 2 - screenOffset
     }
 
-    /**
-     * 获取 marker 中心在屏幕上的绝对坐标（与 GestureDescription 一致）
-     */
     private fun getMarkerScreenCenter(view: View, size: Int): Pair<Int, Int> {
         val location = IntArray(2)
         view.getLocationOnScreen(location)
         return Pair(location[0] + size / 2, location[1] + size / 2)
-    }
-
-    /**
-     * 校准 screenOffset（只执行一次）
-     */
-    private fun calibrateOffset(view: View, params: WindowManager.LayoutParams) {
-        if (offsetCalibrated) return
-        handler.postDelayed({
-            try {
-                val location = IntArray(2)
-                view.getLocationOnScreen(location)
-                val computed = location[1] - params.y
-                if (computed > 0 && computed < 500) {
-                    screenOffset = computed
-                    offsetCalibrated = true
-
-                    // 校准后，修正所有已有 marker 的位置（因为初始创建时可能用了错误的 offset）
-                    markers.values.forEach { entry ->
-                        val entrySize = markerSizePx
-                        val (actualCX, actualCY) = getMarkerScreenCenter(entry.view, entrySize)
-                        onPointMoved?.invoke(entry.pointId, actualCX, actualCY)
-                    }
-                }
-            } catch (e: Exception) {
-            }
-        }, 300)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -156,9 +127,8 @@ class PointMarkerManager(private val context: Context) {
         ).apply {
             gravity = Gravity.START or Gravity.TOP
             x = point.x - size / 2
-            y = screenYToParamsY(point.y, size)
+            y = point.y - size / 2  // 临时值，下面会修正
         }
-
 
         var downTime = 0L
         var downRawX = 0f
@@ -210,7 +180,6 @@ class PointMarkerManager(private val context: Context) {
                     if (longPressed) {
                         // Already handled
                     } else if (moved) {
-                        // 拖动结束：用 getLocationOnScreen 获取准确的屏幕绝对坐标
                         val (centerX, centerY) = getMarkerScreenCenter(marker, size)
                         onPointMoved?.invoke(point.id, centerX, centerY)
                     } else {
@@ -228,8 +197,36 @@ class PointMarkerManager(private val context: Context) {
         markers[point.id] = MarkerEntry(marker, numberText, params, point.id, index)
         windowManager.addView(marker, params)
 
-        // 校准 screenOffset
-        calibrateOffset(marker, params)
+        // ★ 关键：立即测量并修正 marker 位置
+        // 添加 view 后通过 post 确保布局完成，然后用 getLocationOnScreen 获取真实屏幕位置
+        // 计算出 screenOffset 并修正 params.y，使 marker 精确显示在 point.y 对应的屏幕位置
+        marker.post {
+            try {
+                val location = IntArray(2)
+                marker.getLocationOnScreen(location)
+                val actualLeft = location[0]
+                val actualTop = location[1]
+                val yOffset = actualTop - params.y
+
+                if (yOffset != 0 && yOffset > 0 && yOffset < 500) {
+                    screenOffset = yOffset
+                    // 修正 params.y 使 marker 移到 point.y 对应的精确屏幕位置
+                    params.y -= yOffset
+                    windowManager.updateViewLayout(marker, params)
+
+                    // 验证修正结果
+                    marker.getLocationOnScreen(location)
+                    val verifyCenterX = location[0] + size / 2
+                    val verifyCenterY = location[1] + size / 2
+
+                    diagnosticInfo = "screenOffset=$screenOffset | display=${context.resources.displayMetrics.widthPixels}x${context.resources.displayMetrics.heightPixels} | marker#${index}: point=(${point.x},${point.y}) verify=($verifyCenterX,$verifyCenterY) match=${verifyCenterX==point.x && verifyCenterY==point.y}"
+                } else {
+                    diagnosticInfo = "screenOffset=0 (yOffset=$yOffset) | display=${context.resources.displayMetrics.widthPixels}x${context.resources.displayMetrics.heightPixels} | marker#${index}: point=(${point.x},${point.y})"
+                }
+            } catch (e: Exception) {
+                diagnosticInfo = "ERROR: ${e.message}"
+            }
+        }
     }
 
     fun removeMarker(pointId: Long) {

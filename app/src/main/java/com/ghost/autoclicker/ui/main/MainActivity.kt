@@ -1,6 +1,10 @@
 package com.ghost.autoclicker.ui.main
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -15,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,6 +94,18 @@ fun MainScreen(vm: MainViewModel) {
                     }
                     IconButton(onClick = { showTargetAppDialog = true }) {
                         Icon(Icons.Default.Apps, contentDescription = "限定APP")
+                    }
+                    // 诊断按钮：复制坐标诊断信息到剪贴板
+                    val ctx = LocalContext.current
+                    IconButton(onClick = {
+                        val info = vm.pointMarkers.diagnosticInfo
+                        val pointsInfo = vm.points.joinToString("\n") { "  点${it.id}: saved=(${it.x},${it.y})" }
+                        val full = "[AutoClicker 诊断]\n$info\n点击点:\n$pointsInfo"
+                        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("diagnostic", full))
+                        Toast.makeText(ctx, "诊断信息已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.BugReport, contentDescription = "诊断")
                     }
                 }
             )
