@@ -25,11 +25,6 @@ class PointMarkerManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val markers = mutableMapOf<Long, MarkerEntry>()
 
-    // 不预计算 statusBarHeight，而是在每个 marker 的 onTouch 中
-    // 用实际 rawY 与 params.y 的关系来动态确定偏移量。
-    // 初始时记录 rawY - params.y = offset，后续拖动和保存都基于此 offset。
-    // 这样不管 Gravity.TOP 的 y=0 对应屏幕哪个位置，都能正确映射。
-
     data class MarkerEntry(
         val view: View,
         val numberText: TextView,
@@ -38,9 +33,9 @@ class PointMarkerManager(private val context: Context) {
         var index: Int
     )
 
-    var onPointMoved: ((Long, Int, Int) -> Unit)? = null  // pointId, x, y
-    var onPointLongPressed: ((Long) -> Unit)? = null       // pointId
-    var onPointToggled: ((Long, Boolean) -> Unit)? = null  // pointId, selected
+    var onPointMoved: ((Long, Int, Int) -> Unit)? = null
+    var onPointLongPressed: ((Long) -> Unit)? = null
+    var onPointToggled: ((Long, Boolean) -> Unit)? = null
 
     private val selectedPoints = mutableSetOf<Long>()
 
@@ -58,15 +53,27 @@ class PointMarkerManager(private val context: Context) {
     private val density: Float
         get() = context.resources.displayMetrics.density
 
+    /**
+     * 获取 marker 在屏幕上的绝对中心坐标。
+     * 使用 getLocationOnScreen() 而非 params.y + size/2，
+     * 因为 WindowManager 的 params.y 不等于屏幕绝对 y 坐标：
+     * - Gravity.TOP 的 params.y=0 对应的是状态栏下方（Android 12+）
+     * - 而 GestureDescription 使用的是屏幕绝对坐标（y=0 在屏幕最顶部）
+     * - getLocationOnScreen() 返回的才是和 GestureDescription 一致的坐标系
+     */
+    private fun getMarkerScreenCenter(view: View, size: Int): Pair<Int, Int> {
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return Pair(location[0] + size / 2, location[1] + size / 2)
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     fun addMarker(point: ClickPoint, index: Int) {
         if (markers.containsKey(point.id)) return
 
         val size = markerSizePx
 
-        // Create marker view
         val marker = FrameLayout(context).apply {
-            // Background circle
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setSize(size, size)
@@ -78,7 +85,6 @@ class PointMarkerManager(private val context: Context) {
             elevation = 4f * density
         }
 
-        // Number text
         val numberText = TextView(context).apply {
             text = "${index + 1}"
             setTextColor(Color.WHITE)
@@ -93,10 +99,6 @@ class PointMarkerManager(private val context: Context) {
         )
         marker.addView(numberText, lp)
 
-        // 初始位置：屏幕坐标 - size/2 得到窗口左上角
-        // 动态偏移量会在第一次 onTouch 时计算
-        var yOffset: Int = 0  // rawY = params.y + yOffset
-
         val params = WindowManager.LayoutParams(
             size,
             size,
@@ -106,10 +108,9 @@ class PointMarkerManager(private val context: Context) {
         ).apply {
             gravity = Gravity.START or Gravity.TOP
             x = point.x - size / 2
-            y = point.y - size / 2  // 先用屏幕坐标直接设，yOffset 会在touch时校准
+            y = point.y - size / 2
         }
 
-        // Touch handling: drag, long press, tap to select
         var downTime = 0L
         var downRawX = 0f
         var downRawY = 0f
@@ -117,8 +118,6 @@ class PointMarkerManager(private val context: Context) {
         var downY = 0
         var moved = false
         var longPressed = false
-
-        // Long press runnable
         var longPressRunnable: Runnable? = null
 
         marker.setOnTouchListener { _, event ->
@@ -132,14 +131,6 @@ class PointMarkerManager(private val context: Context) {
                     moved = false
                     longPressed = false
 
-                    // 动态计算偏移量：rawY 和 params.y 之间的差
-                    // 只在首次或 y 值合理时更新，避免异常值
-                    val computedOffset = (event.rawY - params.y).toInt()
-                    if (yOffset == 0 || (computedOffset > 0 && computedOffset < 500)) {
-                        yOffset = computedOffset
-                    }
-
-                    // Schedule long press detection
                     longPressRunnable = Runnable {
                         longPressed = true
                         onPointLongPressed?.invoke(point.id)
@@ -154,7 +145,6 @@ class PointMarkerManager(private val context: Context) {
 
                     if (!moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
                         moved = true
-                        // Cancel long press if we're dragging
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                     }
 
@@ -169,21 +159,14 @@ class PointMarkerManager(private val context: Context) {
                     longPressRunnable?.let { handler.removeCallbacks(it) }
 
                     if (longPressed) {
-                        // Already handled by long press runnable
+                        // Already handled
                     } else if (moved) {
-                        // Drag ended - 用 rawY 直接算屏幕坐标
-                        val centerX = params.x + size / 2
-                        // 屏幕坐标 = 窗口y + 动态偏移（包含状态栏等）
-                        val centerY = params.y + yOffset
+                        // 拖动结束：用 getLocationOnScreen 获取准确的屏幕绝对坐标
+                        val (centerX, centerY) = getMarkerScreenCenter(marker, size)
                         onPointMoved?.invoke(point.id, centerX, centerY)
                     } else {
-                        // Tap - toggle selection
                         val wasSelected = selectedPoints.contains(point.id)
-                        if (wasSelected) {
-                            selectedPoints.remove(point.id)
-                        } else {
-                            selectedPoints.add(point.id)
-                        }
+                        if (wasSelected) selectedPoints.remove(point.id) else selectedPoints.add(point.id)
                         onPointToggled?.invoke(point.id, !wasSelected)
                         updateMarkerAppearance(marker, point.id, index)
                     }
@@ -218,17 +201,13 @@ class PointMarkerManager(private val context: Context) {
         val size = markerSizePx
         entry.params.x = x - size / 2
         entry.params.y = y - size / 2
-        // 记录初始偏移供后续touch使用
-        // yOffset 会在下次touch时自动校准
         try { windowManager.updateViewLayout(entry.view, entry.params) } catch (_: Exception) {}
     }
 
     fun updateAllMarkers(points: List<ClickPoint>) {
-        // Remove markers for points that no longer exist
         val currentIds = points.map { it.id }.toSet()
         markers.keys.filter { it !in currentIds }.forEach { removeMarker(it) }
 
-        // Add/update markers for existing points
         points.forEachIndexed { index, point ->
             if (point.id in markers) {
                 val entry = markers[point.id]!!
@@ -245,7 +224,6 @@ class PointMarkerManager(private val context: Context) {
     }
 
     private fun updateAllIndices() {
-        // Re-number all markers
         val sortedEntries = markers.values.sortedBy { it.pointId }
         sortedEntries.forEachIndexed { i, entry ->
             entry.index = i
