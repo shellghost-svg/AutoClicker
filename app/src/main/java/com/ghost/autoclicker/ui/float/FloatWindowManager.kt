@@ -18,6 +18,9 @@ import com.ghost.autoclicker.service.ClickAccessibilityService
 
 class FloatWindowManager(private val context: Context) {
 
+    /** 设置 PointMarkerManager 引用，启动点击时同步真实坐标 */
+    var markerManager: PointMarkerManager? = null
+
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private var floatView: View? = null
@@ -147,6 +150,18 @@ class FloatWindowManager(private val context: Context) {
             isRunning = !wasRunning,
             totalClicks = if (!wasRunning) 0 else ClickAccessibilityService.globalConfig.totalClicks
         )
+
+        // 启动前同步 marker 的实际屏幕坐标到 service
+        if (!wasRunning) {
+            markerManager?.let { mm ->
+                val positions = mm.getActualScreenPositions()
+                ClickAccessibilityService.clickPoints.forEachIndexed { i, pt ->
+                    positions[pt.id]?.let { (ax, ay) ->
+                        ClickAccessibilityService.clickPoints[i] = pt.copy(x = ax, y = ay)
+                    }
+                }
+            }
+        }
 
         updateStatus()
         svc.updateRunning()

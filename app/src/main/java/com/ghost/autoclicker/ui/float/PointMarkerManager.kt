@@ -44,9 +44,23 @@ class PointMarkerManager(private val context: Context) {
      */
     private var screenOffset: Int = 0
 
-    /** 诊断信息，供外部读取 */
-    var diagnosticInfo: String = ""
-        private set
+    /**
+     * 获取所有 marker 的实时屏幕坐标。
+     * 返回 Map<pointId, Pair<centerX, centerY>>
+     * 使用 getLocationOnScreen 获取真实屏幕坐标。
+     */
+    fun getActualScreenPositions(): Map<Long, Pair<Int, Int>> {
+        val size = markerSizePx
+        val result = mutableMapOf<Long, Pair<Int, Int>>()
+        markers.values.forEach { entry ->
+            try {
+                val location = IntArray(2)
+                entry.view.getLocationOnScreen(location)
+                result[entry.pointId] = Pair(location[0] + size / 2, location[1] + size / 2)
+            } catch (_: Exception) {}
+        }
+        return result
+    }
 
     data class MarkerEntry(
         val view: View,
@@ -214,17 +228,10 @@ class PointMarkerManager(private val context: Context) {
                     params.y -= yOffset
                     windowManager.updateViewLayout(marker, params)
 
-                    // 验证修正结果
-                    marker.getLocationOnScreen(location)
-                    val verifyCenterX = location[0] + size / 2
-                    val verifyCenterY = location[1] + size / 2
-
-                    diagnosticInfo = "screenOffset=$screenOffset | display=${context.resources.displayMetrics.widthPixels}x${context.resources.displayMetrics.heightPixels} | marker#${index}: point=(${point.x},${point.y}) verify=($verifyCenterX,$verifyCenterY) match=${verifyCenterX==point.x && verifyCenterY==point.y}"
-                } else {
-                    diagnosticInfo = "screenOffset=0 (yOffset=$yOffset) | display=${context.resources.displayMetrics.widthPixels}x${context.resources.displayMetrics.heightPixels} | marker#${index}: point=(${point.x},${point.y})"
+                    // 修正后 marker 在正确位置（验证需下一帧，此处跳过）
                 }
             } catch (e: Exception) {
-                diagnosticInfo = "ERROR: ${e.message}"
+                // ignore
             }
         }
     }

@@ -98,9 +98,10 @@ fun MainScreen(vm: MainViewModel) {
                     // 诊断按钮：复制坐标诊断信息到剪贴板
                     val ctx = LocalContext.current
                     IconButton(onClick = {
-                        val info = vm.pointMarkers.diagnosticInfo
+                        val positions = vm.pointMarkers.getActualScreenPositions()
+                        val posInfo = positions.entries.joinToString("\n") { "  点${it.key}: actual=(${it.value.first},${it.value.second}) saved=(${vm.points.find { p->p.id==it.key }?.x},${vm.points.find { p->p.id==it.key }?.y})" }
                         val pointsInfo = vm.points.joinToString("\n") { "  点${it.id}: saved=(${it.x},${it.y})" }
-                        val full = "[AutoClicker 诊断]\n$info\n点击点:\n$pointsInfo"
+                        val full = "[AutoClicker 诊断]\nmarkers:\n$posInfo\npoints:\n$pointsInfo"
                         val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("diagnostic", full))
                         Toast.makeText(ctx, "诊断信息已复制到剪贴板", Toast.LENGTH_SHORT).show()

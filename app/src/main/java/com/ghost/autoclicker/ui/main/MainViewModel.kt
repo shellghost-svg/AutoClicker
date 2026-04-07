@@ -21,6 +21,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val floatWindow = FloatWindowManager(app)
     val pointMarkers = PointMarkerManager(app)
+    init {
+        floatWindow.markerManager = pointMarkers
+    }
     private val prefs = app.getSharedPreferences("autoclicker", Context.MODE_PRIVATE)
     private val gson = Gson()
 
@@ -78,8 +81,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ===== 同步到 Service =====
     private fun syncToService() {
+        // 获取每个 marker 的实际屏幕坐标，确保点击位置精确
+        val actualPositions = pointMarkers.getActualScreenPositions()
+        val pointsToSync = _points.map { pt ->
+            actualPositions[pt.id]?.let { (ax, ay) ->
+                pt.copy(x = ax, y = ay)
+            } ?: pt
+        }
         ClickAccessibilityService.clickPoints.clear()
-        ClickAccessibilityService.clickPoints.addAll(_points)
+        ClickAccessibilityService.clickPoints.addAll(pointsToSync)
         ClickAccessibilityService.instance?.updateRunning()
     }
 
