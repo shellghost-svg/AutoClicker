@@ -19,11 +19,31 @@ import android.widget.TextView
 import com.ghost.autoclicker.model.ClickPoint
 import com.ghost.autoclicker.service.ClickAccessibilityService
 
+/**
+ * 点击点悬浮标记管理器
+ *
+ * 坐标系说明：
+ * - ClickPoint.x/y = 屏幕绝对坐标（与 GestureDescription 一致，y=0 在屏幕最顶部）
+ * - WindowManager.LayoutParams.x/y = 窗口参数（Gravity.TOP 时 y=0 在状态栏下方）
+ * - 两者差值 = screenOffset（通常等于状态栏高度，Android 12+ 约 128px）
+ * - View.getLocationOnScreen() 返回的是屏幕绝对坐标 ← 与 GestureDescription 一致
+ *
+ * 所有坐标转换都基于 screenOffset，该值在首个 marker 创建时通过 getLocationOnScreen 校准。
+ */
 class PointMarkerManager(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private val markers = mutableMapOf<Long, MarkerEntry>()
+
+    /**
+     * 屏幕偏移量：getLocationOnScreen().y - params.y
+     * 在 Android 12+ 上等于状态栏高度（~128px）
+     * 屏幕绝对坐标 = params.y + screenOffset
+     * params.y = 屏幕绝对坐标 - screenOffset
+     */
+    private var screenOffset: Int = 0
+    private var offsetCalibrated = false
 
     data class MarkerEntry(
         val view: View,
@@ -54,17 +74,45 @@ class PointMarkerManager(private val context: Context) {
         get() = context.resources.displayMetrics.density
 
     /**
-     * 获取 marker 在屏幕上的绝对中心坐标。
-     * 使用 getLocationOnScreen() 而非 params.y + size/2，
-     * 因为 WindowManager 的 params.y 不等于屏幕绝对 y 坐标：
-     * - Gravity.TOP 的 params.y=0 对应的是状态栏下方（Android 12+）
-     * - 而 GestureDescription 使用的是屏幕绝对坐标（y=0 在屏幕最顶部）
-     * - getLocationOnScreen() 返回的才是和 GestureDescription 一致的坐标系
+     * 屏幕绝对坐标 → params.y
+     */
+    private fun screenYToParamsY(screenY: Int, size: Int): Int {
+        return screenY - size / 2 - screenOffset
+    }
+
+    /**
+     * 获取 marker 中心在屏幕上的绝对坐标（与 GestureDescription 一致）
      */
     private fun getMarkerScreenCenter(view: View, size: Int): Pair<Int, Int> {
         val location = IntArray(2)
         view.getLocationOnScreen(location)
         return Pair(location[0] + size / 2, location[1] + size / 2)
+    }
+
+    /**
+     * 校准 screenOffset（只执行一次）
+     */
+    private fun calibrateOffset(view: View, params: WindowManager.LayoutParams) {
+        if (offsetCalibrated) return
+        handler.postDelayed({
+            try {
+                val location = IntArray(2)
+                view.getLocationOnScreen(location)
+                val computed = location[1] - params.y
+                if (computed > 0 && computed < 500) {
+                    screenOffset = computed
+                    offsetCalibrated = true
+
+                    // 校准后，修正所有已有 marker 的位置（因为初始创建时可能用了错误的 offset）
+                    markers.values.forEach { entry ->
+                        val entrySize = markerSizePx
+                        val (actualCX, actualCY) = getMarkerScreenCenter(entry.view, entrySize)
+                        onPointMoved?.invoke(entry.pointId, actualCX, actualCY)
+                    }
+                }
+            } catch (e: Exception) {
+            }
+        }, 300)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -108,8 +156,9 @@ class PointMarkerManager(private val context: Context) {
         ).apply {
             gravity = Gravity.START or Gravity.TOP
             x = point.x - size / 2
-            y = point.y - size / 2
+            y = screenYToParamsY(point.y, size)
         }
+
 
         var downTime = 0L
         var downRawX = 0f
@@ -178,6 +227,9 @@ class PointMarkerManager(private val context: Context) {
 
         markers[point.id] = MarkerEntry(marker, numberText, params, point.id, index)
         windowManager.addView(marker, params)
+
+        // 校准 screenOffset
+        calibrateOffset(marker, params)
     }
 
     fun removeMarker(pointId: Long) {
@@ -200,7 +252,7 @@ class PointMarkerManager(private val context: Context) {
         val entry = markers[pointId] ?: return
         val size = markerSizePx
         entry.params.x = x - size / 2
-        entry.params.y = y - size / 2
+        entry.params.y = screenYToParamsY(y, size)
         try { windowManager.updateViewLayout(entry.view, entry.params) } catch (_: Exception) {}
     }
 
