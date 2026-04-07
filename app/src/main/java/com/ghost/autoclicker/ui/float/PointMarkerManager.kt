@@ -25,8 +25,10 @@ class PointMarkerManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val markers = mutableMapOf<Long, MarkerEntry>()
 
-    // 不再使用 statusBarHeight，直接用 rawX/rawY 映射到屏幕绝对坐标
-    // rawY 已经包含了状态栏偏移，而 GestureDescription 用的也是包含状态栏的坐标
+    // 不预计算 statusBarHeight，而是在每个 marker 的 onTouch 中
+    // 用实际 rawY 与 params.y 的关系来动态确定偏移量。
+    // 初始时记录 rawY - params.y = offset，后续拖动和保存都基于此 offset。
+    // 这样不管 Gravity.TOP 的 y=0 对应屏幕哪个位置，都能正确映射。
 
     data class MarkerEntry(
         val view: View,
@@ -91,6 +93,10 @@ class PointMarkerManager(private val context: Context) {
         )
         marker.addView(numberText, lp)
 
+        // 初始位置：屏幕坐标 - size/2 得到窗口左上角
+        // 动态偏移量会在第一次 onTouch 时计算
+        var yOffset: Int = 0  // rawY = params.y + yOffset
+
         val params = WindowManager.LayoutParams(
             size,
             size,
@@ -100,7 +106,7 @@ class PointMarkerManager(private val context: Context) {
         ).apply {
             gravity = Gravity.START or Gravity.TOP
             x = point.x - size / 2
-            y = point.y - size / 2
+            y = point.y - size / 2  // 先用屏幕坐标直接设，yOffset 会在touch时校准
         }
 
         // Touch handling: drag, long press, tap to select
@@ -125,6 +131,13 @@ class PointMarkerManager(private val context: Context) {
                     downY = params.y
                     moved = false
                     longPressed = false
+
+                    // 动态计算偏移量：rawY 和 params.y 之间的差
+                    // 只在首次或 y 值合理时更新，避免异常值
+                    val computedOffset = (event.rawY - params.y).toInt()
+                    if (yOffset == 0 || (computedOffset > 0 && computedOffset < 500)) {
+                        yOffset = computedOffset
+                    }
 
                     // Schedule long press detection
                     longPressRunnable = Runnable {
@@ -158,9 +171,10 @@ class PointMarkerManager(private val context: Context) {
                     if (longPressed) {
                         // Already handled by long press runnable
                     } else if (moved) {
-                        // Drag ended - update coordinates
+                        // Drag ended - 用 rawY 直接算屏幕坐标
                         val centerX = params.x + size / 2
-                        val centerY = params.y + size / 2
+                        // 屏幕坐标 = 窗口y + 动态偏移（包含状态栏等）
+                        val centerY = params.y + yOffset
                         onPointMoved?.invoke(point.id, centerX, centerY)
                     } else {
                         // Tap - toggle selection
@@ -204,6 +218,8 @@ class PointMarkerManager(private val context: Context) {
         val size = markerSizePx
         entry.params.x = x - size / 2
         entry.params.y = y - size / 2
+        // 记录初始偏移供后续touch使用
+        // yOffset 会在下次touch时自动校准
         try { windowManager.updateViewLayout(entry.view, entry.params) } catch (_: Exception) {}
     }
 
