@@ -2,9 +2,16 @@ package com.ghost.autoclicker.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import com.ghost.autoclicker.R
 import com.ghost.autoclicker.model.*
 import kotlin.random.Random
 
@@ -17,16 +24,85 @@ class ClickAccessibilityService : AccessibilityService() {
         var clickPoints = mutableListOf<ClickPoint>()
         var globalConfig = GlobalConfig()
         var onStatusChanged: ((Boolean) -> Unit)? = null
+
+        private const val CHANNEL_ID = "autoclicker_service"
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var isClicking = false
     private var clickRunnable: Runnable? = null
+    private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        createNotificationChannel()
+        startForegroundNotification()
         onStatusChanged?.invoke(true)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "连点器运行中",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "连点器后台运行通知"
+                setShowBadge(false)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun startForegroundNotification() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        val pi = PendingIntent.getActivity(this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("👻 连点器")
+                .setContentText("服务运行中")
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setContentIntent(pi)
+                .setOngoing(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("👻 连点器")
+                .setContentText("服务运行中")
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setContentIntent(pi)
+                .setOngoing(true)
+                .build()
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1, notification)
+        }
+    }
+
+    private fun updateNotification() {
+        val text = if (globalConfig.isRunning) "运行中 · 已点击 ${globalConfig.totalClicks} 次" else "已暂停"
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("👻 连点器")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setOngoing(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("👻 连点器")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setOngoing(true)
+                .build()
+        }
+        notificationManager.notify(1, notification)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -115,6 +191,7 @@ class ClickAccessibilityService : AccessibilityService() {
         setRepeatCount(point.id, count + 1)
         globalConfig = globalConfig.copy(totalClicks = globalConfig.totalClicks + 1)
         onStatusChanged?.invoke(true)
+        updateNotification()
 
         clickRunnable = object : Runnable {
             override fun run() {

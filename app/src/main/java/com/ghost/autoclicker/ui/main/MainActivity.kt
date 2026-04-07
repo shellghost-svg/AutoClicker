@@ -45,8 +45,9 @@ fun MainScreen(vm: MainViewModel) {
     var showPresetDialog by remember { mutableStateOf(false) }
     var showTargetAppDialog by remember { mutableStateOf(false) }
 
-    // 定时刷新 service 状态
+    // 定时刷新 service 状态 + 权限就绪时自动开悬浮窗
     LaunchedEffect(Unit) {
+        var floatAutoOpened = false
         while (true) {
             kotlinx.coroutines.delay(500)
             vm.refreshServiceStatus()
@@ -55,6 +56,12 @@ fun MainScreen(vm: MainViewModel) {
             val editId = vm.consumeEditRequest()
             if (editId != null) {
                 editingPoint = vm.points.find { it.id == editId }
+            }
+            // 悬浮窗权限刚授予且有数据，自动打开
+            if (!floatAutoOpened && vm.isOverlayGranted.value && !vm.floatWindow.isShowing() && vm.points.isNotEmpty()) {
+                vm.floatWindow.show()
+                vm.pointMarkers.updateAllMarkers(vm.points)
+                floatAutoOpened = true
             }
         }
     }
@@ -149,7 +156,8 @@ fun MainScreen(vm: MainViewModel) {
     }
 
     editingPoint?.let { point ->
-        PointEditDialog(point = point, onConfirm = {
+        val currentPoint = vm.points.find { it.id == point.id } ?: point
+        PointEditDialog(point = currentPoint, onConfirm = {
             vm.updatePoint(it); editingPoint = null
         }, onDismiss = { editingPoint = null })
     }

@@ -41,6 +41,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadConfig()
         setupMarkerCallbacks()
         refreshServiceStatus()
+        // 悬浮窗默认打开（如果权限已授予）
+        if (isOverlayGranted.value && _points.isNotEmpty()) {
+            floatWindow.show()
+            pointMarkers.updateAllMarkers(_points)
+        }
     }
 
     private fun setupMarkerCallbacks() {

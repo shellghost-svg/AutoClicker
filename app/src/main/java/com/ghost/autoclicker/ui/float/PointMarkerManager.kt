@@ -25,6 +25,9 @@ class PointMarkerManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val markers = mutableMapOf<Long, MarkerEntry>()
 
+    // 不再使用 statusBarHeight，直接用 rawX/rawY 映射到屏幕绝对坐标
+    // rawY 已经包含了状态栏偏移，而 GestureDescription 用的也是包含状态栏的坐标
+
     data class MarkerEntry(
         val view: View,
         val numberText: TextView,
@@ -48,7 +51,7 @@ class PointMarkerManager(private val context: Context) {
         }
 
     private val markerSizePx: Int
-        get() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 36f, context.resources.displayMetrics).toInt()
+        get() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 44f, context.resources.displayMetrics).toInt()
 
     private val density: Float
         get() = context.resources.displayMetrics.density
@@ -92,7 +95,7 @@ class PointMarkerManager(private val context: Context) {
             size,
             size,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.START or Gravity.TOP
@@ -129,12 +132,6 @@ class PointMarkerManager(private val context: Context) {
                         onPointLongPressed?.invoke(point.id)
                     }
                     handler.postDelayed(longPressRunnable!!, 500)
-
-                    // Bring to front
-                    try {
-                        windowManager.removeView(marker)
-                        windowManager.addView(marker, params)
-                    } catch (_: Exception) {}
 
                     true
                 }

@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -17,6 +19,7 @@ import com.ghost.autoclicker.service.ClickAccessibilityService
 class FloatWindowManager(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private val handler = Handler(Looper.getMainLooper())
     private var floatView: View? = null
     private var countText: TextView? = null
     private var statusText: TextView? = null
@@ -120,8 +123,26 @@ class FloatWindowManager(private val context: Context) {
 
     @Suppress("UNUSED_PARAMETER")
     private fun toggleClicking(container: LinearLayout) {
-        val svc = ClickAccessibilityService.instance ?: return
+        val svc = ClickAccessibilityService.instance
+        if (svc == null) {
+            // 服务未连接，提示用户
+            statusText?.text = "❌ 服务未连接"
+            statusText?.setTextColor(0xFFFF5555.toInt())
+            countText?.text = "请开启无障碍"
+            handler.postDelayed({ updateStatus() }, 2000)
+            return
+        }
+
         val wasRunning = ClickAccessibilityService.globalConfig.isRunning
+        val enabledPoints = ClickAccessibilityService.clickPoints.filter { it.enabled }
+        if (!wasRunning && enabledPoints.isEmpty()) {
+            statusText?.text = "❌ 无可用点"
+            statusText?.setTextColor(0xFFFF5555.toInt())
+            countText?.text = "请添加点击点"
+            handler.postDelayed({ updateStatus() }, 2000)
+            return
+        }
+
         ClickAccessibilityService.globalConfig = ClickAccessibilityService.globalConfig.copy(
             isRunning = !wasRunning,
             totalClicks = if (!wasRunning) 0 else ClickAccessibilityService.globalConfig.totalClicks

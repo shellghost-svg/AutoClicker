@@ -25,8 +25,6 @@ fun PointEditDialog(
     onDismiss: () -> Unit
 ) {
     var pointLabel by remember { mutableStateOf(point.label) }
-    var x by remember { mutableStateOf(point.x.toString()) }
-    var y by remember { mutableStateOf(point.y.toString()) }
     var delayMs by remember { mutableStateOf(point.delayMs.toString()) }
     var delayRandomMs by remember { mutableStateOf(point.delayRandomMs.toString()) }
     var posOffsetPx by remember { mutableStateOf(point.posOffsetPx.toString()) }
@@ -56,20 +54,9 @@ fun PointEditDialog(
                     label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = x, onValueChange = { x = it.filter { c -> c.isDigit() } },
-                        label = { Text("X 坐标") }, modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                    OutlinedTextField(
-                        value = y, onValueChange = { y = it.filter { c -> c.isDigit() } },
-                        label = { Text("Y 坐标") }, modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
+                Text("📍 位置由悬浮窗拖动设置", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
 
                 Spacer(Modifier.height(12.dp))
 
@@ -158,8 +145,6 @@ fun PointEditDialog(
                         onConfirm(
                             point.copy(
                                 label = pointLabel.ifBlank { point.label },
-                                x = x.toIntOrNull()?.coerceIn(0, 4096) ?: point.x,
-                                y = y.toIntOrNull()?.coerceIn(0, 4096) ?: point.y,
                                 delayMs = delayMs.toLongOrNull()?.coerceIn(10, 60_000) ?: point.delayMs,
                                 delayRandomMs = delayRandomMs.toLongOrNull()?.coerceIn(0, 30_000) ?: 0,
                                 posOffsetPx = posOffsetPx.toIntOrNull()?.coerceIn(0, 100) ?: 0,
