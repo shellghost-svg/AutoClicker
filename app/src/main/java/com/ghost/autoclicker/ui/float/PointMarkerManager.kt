@@ -211,25 +211,21 @@ class PointMarkerManager(private val context: Context) {
         markers[point.id] = MarkerEntry(marker, numberText, params, point.id, index)
         windowManager.addView(marker, params)
 
-        // ★ 关键：立即测量并修正 marker 位置
-        // 添加 view 后通过 post 确保布局完成，然后用 getLocationOnScreen 获取真实屏幕位置
-        // 计算出 screenOffset 并修正 params.y，使 marker 精确显示在 point.y 对应的屏幕位置
+        // ★ 关键：添加 view 后通过 post 测量真实的 screenOffset
+        // 然后用统一的 screenYToParamsY 设置正确位置
         marker.post {
             try {
                 val location = IntArray(2)
                 marker.getLocationOnScreen(location)
-                val actualLeft = location[0]
-                val actualTop = location[1]
-                val yOffset = actualTop - params.y
+                val yOffset = location[1] - params.y
 
-                if (yOffset != 0 && yOffset > 0 && yOffset < 500) {
+                if (yOffset > 0 && yOffset < 500) {
                     screenOffset = yOffset
-                    // 修正 params.y 使 marker 移到 point.y 对应的精确屏幕位置
-                    params.y -= yOffset
-                    windowManager.updateViewLayout(marker, params)
-
-                    // 修正后 marker 在正确位置（验证需下一帧，此处跳过）
                 }
+
+                // 用统一的坐标转换方法设置正确位置
+                params.y = screenYToParamsY(point.y, size)
+                windowManager.updateViewLayout(marker, params)
             } catch (e: Exception) {
                 // ignore
             }
