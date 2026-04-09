@@ -3,7 +3,6 @@ package com.ghost.autoclicker.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.app.Notification
-import android.util.Log
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -11,9 +10,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.ghost.autoclicker.R
 import com.ghost.autoclicker.model.*
+import com.ghost.autoclicker.util.ClickLog
 import kotlin.random.Random
 
 class ClickAccessibilityService : AccessibilityService() {
@@ -40,14 +41,13 @@ class ClickAccessibilityService : AccessibilityService() {
         createNotificationChannel()
         startForegroundNotification()
         onStatusChanged?.invoke(true)
+        ClickLog.i("=== 无障碍服务已连接 ===")
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                "连点器运行中",
-                NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "连点器运行中", NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "连点器后台运行通知"
                 setShowBadge(false)
@@ -106,14 +106,13 @@ class ClickAccessibilityService : AccessibilityService() {
         notificationManager.notify(1, notification)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 可用于检测当前包名
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {}
 
     override fun onDestroy() {
         super.onDestroy()
+        ClickLog.i("=== 无障碍服务销毁 ===")
         stopClicking()
         instance = null
         onStatusChanged?.invoke(false)
@@ -121,11 +120,18 @@ class ClickAccessibilityService : AccessibilityService() {
     }
 
     fun startClicking() {
-        if (isClicking) return
-        if (!globalConfig.isRunning) return
+        if (isClicking) {
+            ClickLog.w("startClicking: 已在运行中")
+            return
+        }
+        if (!globalConfig.isRunning) {
+            ClickLog.w("startClicking: isRunning=false")
+            return
+        }
 
         val enabledPoints = clickPoints.filter { it.enabled }
         if (enabledPoints.isEmpty()) {
+            ClickLog.e("startClicking: 无可用点击点")
             isClicking = false
             return
         }
@@ -135,13 +141,17 @@ class ClickAccessibilityService : AccessibilityService() {
         if (!targetPkg.isNullOrEmpty()) {
             val currentPkg = rootInActiveWindow?.packageName?.toString()
             if (currentPkg != null && currentPkg != targetPkg) {
-                // 不在目标APP内，暂停但不停止，等回到目标APP再继续
+                ClickLog.d("startClicking: 不在目标APP(current=$currentPkg, target=$targetPkg), 1秒后重试")
                 handler.postDelayed({ startClicking() }, 1000)
                 return
             }
         }
 
         isClicking = true
+        ClickLog.i("=== 开始点击 === 共${enabledPoints.size}个点")
+        enabledPoints.forEachIndexed { i, p ->
+            ClickLog.d("  [$i] ${p.label}: (${p.x},${p.y}) mode=${p.clickMode} delay=${p.delayMs}ms offset=${p.posOffsetPx}px")
+        }
         scheduleNext(enabledPoints, 0)
     }
 
@@ -149,9 +159,11 @@ class ClickAccessibilityService : AccessibilityService() {
         isClicking = false
         clickRunnable?.let { handler.removeCallbacks(it) }
         clickRunnable = null
+        ClickLog.i("=== 停止点击 === 总计: ${globalConfig.totalClicks}次")
     }
 
     fun updateRunning() {
+        ClickLog.d("updateRunning: isRunning=${globalConfig.isRunning}, isClicking=$isClicking")
         if (globalConfig.isRunning && !isClicking) {
             startClicking()
         } else if (!globalConfig.isRunning && isClicking) {
@@ -177,6 +189,7 @@ class ClickAccessibilityService : AccessibilityService() {
         // 检查最大重复次数
         val count = getRepeatCount(point.id)
         if (point.maxRepeat > 0 && count >= point.maxRepeat) {
+            ClickLog.d("scheduleNext[${point.label}]: 达到最大重复 ${point.maxRepeat}, 跳过")
             resetRepeatCount(point.id)
             val nextIdx = (pointIndex + 1) % points.size
             if (nextIdx == 0 && points.size > 1) {
@@ -209,6 +222,7 @@ class ClickAccessibilityService : AccessibilityService() {
             Random.nextLong(-point.delayRandomMs, point.delayRandomMs + 1)
         } else 0L).coerceIn(10, 60_000)
 
+        ClickLog.v("scheduleNext[${point.label}]: 下次执行在 ${delay}ms 后")
         handler.postDelayed(clickRunnable!!, delay)
     }
 
@@ -216,10 +230,13 @@ class ClickAccessibilityService : AccessibilityService() {
         val offsetX = if (point.posOffsetPx > 0) Random.nextInt(-point.posOffsetPx, point.posOffsetPx + 1) else 0
         val offsetY = if (point.posOffsetPx > 0) Random.nextInt(-point.posOffsetPx, point.posOffsetPx + 1) else 0
 
-        val finalX = (point.x + offsetX).toFloat().coerceIn(0f, 2000f)
-        val finalY = (point.y + offsetY).toFloat().coerceIn(0f, 2000f)
+        val maxX = resources.displayMetrics.widthPixels.toFloat()
+        val maxY = resources.displayMetrics.heightPixels.toFloat()
 
-        Log.w("AutoClick", "performClick: point(${point.x},${point.y}) → gesture($finalX,$finalY) offset=($offsetX,$offsetY) mode=${point.clickMode}")
+        val finalX = (point.x + offsetX).toFloat().coerceIn(0f, maxX)
+        val finalY = (point.y + offsetY).toFloat().coerceIn(0f, maxY)
+
+        ClickLog.i("CLICK[${point.label}]: saved=(${point.x},${point.y}) gesture=($finalX,$finalY) offset=($offsetX,$offsetY) mode=${point.clickMode} total=${globalConfig.totalClicks + 1}")
 
         when (point.clickMode) {
             ClickMode.SINGLE -> click(finalX, finalY)
@@ -229,8 +246,9 @@ class ClickAccessibilityService : AccessibilityService() {
                 handler.postDelayed({ click(finalX, finalY) }, 80)
             }
             ClickMode.SWIPE -> {
-                val endX = (point.swipeEndX + offsetX).toFloat().coerceIn(0f, 2000f)
-                val endY = (point.swipeEndY + offsetY).toFloat().coerceIn(0f, 2000f)
+                val endX = (point.swipeEndX + offsetX).toFloat().coerceIn(0f, maxX)
+                val endY = (point.swipeEndY + offsetY).toFloat().coerceIn(0f, maxY)
+                ClickLog.i("SWIPE: ($finalX,$finalY) -> ($endX,$endY) duration=${point.swipeDurationMs}ms")
                 swipe(finalX, finalY, endX, endY, point.swipeDurationMs.coerceIn(50, 5000))
             }
         }
@@ -242,6 +260,7 @@ class ClickAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, 50))
             .build()
         dispatchGesture(gesture, null, null)
+        ClickLog.d("dispatchGesture click at ($x, $y)")
     }
 
     private fun longPress(x: Float, y: Float, durationMs: Long) {
@@ -250,6 +269,7 @@ class ClickAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
             .build()
         dispatchGesture(gesture, null, null)
+        ClickLog.d("dispatchGesture longPress at ($x, $y) duration=${durationMs}ms")
     }
 
     private fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long) {
@@ -261,10 +281,11 @@ class ClickAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
             .build()
         dispatchGesture(gesture, null, null)
+        ClickLog.d("dispatchGesture swipe ($startX,$startY)->($endX,$endY) duration=${durationMs}ms")
     }
 }
 
-// 重复计数管理（使用独立Map避免扩展属性问题）
+// 重复计数管理
 private val _repeatCounts = mutableMapOf<Long, Int>()
 
 private fun getRepeatCount(id: Long): Int = _repeatCounts.getOrPut(id) { 0 }

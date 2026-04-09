@@ -15,10 +15,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.ghost.autoclicker.service.ClickAccessibilityService
+import com.ghost.autoclicker.util.ClickLog
 
 class FloatWindowManager(private val context: Context) {
 
-    /** 设置 PointMarkerManager 引用，启动点击时同步真实坐标 */
     var markerManager: PointMarkerManager? = null
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -38,7 +38,6 @@ class FloatWindowManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        // 主容器
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xDD222222.toInt())
@@ -46,7 +45,6 @@ class FloatWindowManager(private val context: Context) {
             gravity = Gravity.CENTER
         }
 
-        // 状态文字
         val statusTv = TextView(context).apply {
             text = "▶ 未启动"
             setTextColor(0xFFFFFFFF.toInt())
@@ -56,7 +54,6 @@ class FloatWindowManager(private val context: Context) {
         }
         statusText = statusTv
 
-        // 计数文字
         val countTv = TextView(context).apply {
             text = "0 次"
             setTextColor(0xAAFFFFFF.toInt())
@@ -113,6 +110,7 @@ class FloatWindowManager(private val context: Context) {
 
         floatView = container
         windowManager.addView(container, params)
+        ClickLog.i("FloatWindow: 已显示")
     }
 
     fun updateStatus() {
@@ -128,7 +126,7 @@ class FloatWindowManager(private val context: Context) {
     private fun toggleClicking(container: LinearLayout) {
         val svc = ClickAccessibilityService.instance
         if (svc == null) {
-            // 服务未连接，提示用户
+            ClickLog.e("toggleClicking: 服务未连接!")
             statusText?.text = "❌ 服务未连接"
             statusText?.setTextColor(0xFFFF5555.toInt())
             countText?.text = "请开启无障碍"
@@ -139,6 +137,7 @@ class FloatWindowManager(private val context: Context) {
         val wasRunning = ClickAccessibilityService.globalConfig.isRunning
         val enabledPoints = ClickAccessibilityService.clickPoints.filter { it.enabled }
         if (!wasRunning && enabledPoints.isEmpty()) {
+            ClickLog.e("toggleClicking: 无可用点")
             statusText?.text = "❌ 无可用点"
             statusText?.setTextColor(0xFFFF5555.toInt())
             countText?.text = "请添加点击点"
@@ -155,14 +154,20 @@ class FloatWindowManager(private val context: Context) {
         if (!wasRunning) {
             markerManager?.let { mm ->
                 val positions = mm.getActualScreenPositions()
+                ClickLog.i("toggleClicking: 启动前同步坐标, marker offset=${mm.getScreenOffset()}")
                 ClickAccessibilityService.clickPoints.forEachIndexed { i, pt ->
                     positions[pt.id]?.let { (ax, ay) ->
+                        val oldX = pt.x; val oldY = pt.y
                         ClickAccessibilityService.clickPoints[i] = pt.copy(x = ax, y = ay)
+                        if (oldX != ax || oldY != ay) {
+                            ClickLog.i("toggleClicking: 点[${pt.label}] 坐标修正: ($oldX,$oldY) -> ($ax,$ay)")
+                        }
                     }
                 }
             }
         }
 
+        ClickLog.i("toggleClicking: ${if (wasRunning) "停止" else "启动"}, 共${enabledPoints.size}个点")
         updateStatus()
         svc.updateRunning()
     }
@@ -171,6 +176,7 @@ class FloatWindowManager(private val context: Context) {
         floatView?.let { windowManager.removeView(it); floatView = null }
         countText = null
         statusText = null
+        ClickLog.i("FloatWindow: 已隐藏")
     }
 
     fun isShowing() = floatView != null

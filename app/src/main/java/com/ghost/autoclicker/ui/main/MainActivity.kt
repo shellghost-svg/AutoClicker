@@ -2,8 +2,11 @@ package com.ghost.autoclicker.ui.main
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +29,16 @@ import androidx.compose.ui.unit.sp
 import com.ghost.autoclicker.model.*
 import com.ghost.autoclicker.service.ClickAccessibilityService
 import com.ghost.autoclicker.ui.theme.AutoClickerTheme
+import com.ghost.autoclicker.util.ClickLog
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.font.FontFamily
+import android.os.Build
+import android.os.Environment
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +62,7 @@ fun MainScreen(vm: MainViewModel) {
     var editingPoint by remember { mutableStateOf<ClickPoint?>(null) }
     var showPresetDialog by remember { mutableStateOf(false) }
     var showTargetAppDialog by remember { mutableStateOf(false) }
+    var showLogDialog by remember { mutableStateOf(false) }
 
     // 定时刷新 service 状态 + 权限就绪时自动开悬浮窗
     LaunchedEffect(Unit) {
@@ -95,18 +109,9 @@ fun MainScreen(vm: MainViewModel) {
                     IconButton(onClick = { showTargetAppDialog = true }) {
                         Icon(Icons.Default.Apps, contentDescription = "限定APP")
                     }
-                    // 诊断按钮：复制坐标诊断信息到剪贴板
-                    val ctx = LocalContext.current
-                    IconButton(onClick = {
-                        val positions = vm.pointMarkers.getActualScreenPositions()
-                        val posInfo = positions.entries.joinToString("\n") { "  点${it.key}: actual=(${it.value.first},${it.value.second}) saved=(${vm.points.find { p->p.id==it.key }?.x},${vm.points.find { p->p.id==it.key }?.y})" }
-                        val pointsInfo = vm.points.joinToString("\n") { "  点${it.id}: saved=(${it.x},${it.y})" }
-                        val full = "[AutoClicker 诊断]\nmarkers:\n$posInfo\npoints:\n$pointsInfo"
-                        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("diagnostic", full))
-                        Toast.makeText(ctx, "诊断信息已复制到剪贴板", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.BugReport, contentDescription = "诊断")
+                    // 日志按钮：打开日志查看器
+                    IconButton(onClick = { showLogDialog = true }) {
+                        Icon(Icons.Default.ListAlt, contentDescription = "日志")
                     }
                 }
             )
@@ -196,6 +201,10 @@ fun MainScreen(vm: MainViewModel) {
             onConfirm = { vm.setTargetPackage(it) },
             onDismiss = { showTargetAppDialog = false }
         )
+    }
+
+    if (showLogDialog) {
+        LogViewerDialog(onDismiss = { showLogDialog = false })
     }
 }
 
@@ -374,4 +383,134 @@ fun TargetAppDialog(currentPackage: String?, onConfirm: (String?) -> Unit, onDis
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
+}
+
+@Composable
+fun LogViewerDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var logText by remember { mutableStateOf("加载中...") }
+
+    LaunchedEffect(Unit) {
+        logText = ClickLog.getLogContent(300)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("📋 运行日志") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().height(400.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = {
+                        logText = ClickLog.getLogContent(300)
+                    }, modifier = Modifier.weight(1f)) {
+                        Text("刷新", fontSize = 12.sp)
+                    }
+                    OutlinedButton(onClick = {
+                        val positions = ClickLog.currentPositions
+                        val info = buildString {
+                            append("[坐标诊断]\n")
+                            append("screenOffset=${ClickLog.currentScreenOffset}\n\n")
+                            positions.forEach { arr ->
+                                val id = arr[0]; val sx = arr[1]; val sy = arr[2]; val ax = arr[3]; val ay = arr[4]
+                                append("点${id}: saved=($sx,$sy) actual=($ax,$ay) err=(${ax - sx},${ay - sy})\n")
+                            }
+                        }
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("diag", info))
+                        android.widget.Toast.makeText(context, "诊断已复制", android.widget.Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.weight(1f)) {
+                        Text("复制诊断", fontSize = 12.sp)
+                    }
+                    OutlinedButton(onClick = {
+                        ClickLog.clearLog()
+                        logText = "(已清空)"
+                    }, modifier = Modifier.weight(1f)) {
+                        Text("清空", fontSize = 12.sp)
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("log", logText))
+                        Toast.makeText(context, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.ContentCopy, null, Modifier.size(14.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("复制日志", fontSize = 12.sp)
+                    }
+                    OutlinedButton(onClick = {
+                        exportLog(context, logText)
+                    }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.Share, null, Modifier.size(14.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("导出", fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFF1E1E1E),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        logText,
+                        color = Color(0xFFCCCCCC),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(8.dp),
+                        softWrap = true
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+private fun exportLog(context: Context, logText: String) {
+    try {
+        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "autoclicker_log_$ts.txt"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw Exception("无法创建文件")
+            context.contentResolver.openOutputStream(uri)?.use { it.write(logText.toByteArray()) }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            context.contentResolver.update(uri, values, null, null)
+
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(share, "分享日志"))
+            Toast.makeText(context, "已保存到 Downloads 并分享", Toast.LENGTH_SHORT).show()
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (!dir.exists()) dir.mkdirs()
+            File(dir, fileName).writeText(logText)
+
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, logText)
+            }
+            context.startActivity(Intent.createChooser(share, "分享日志"))
+            Toast.makeText(context, "已保存到 Downloads", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
 }
