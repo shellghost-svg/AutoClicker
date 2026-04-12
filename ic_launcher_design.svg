@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366F1"/>
+      <stop offset="100%" style="stop-color:#3B82F6"/>
+    </linearGradient>
+    <!-- 点击光晕 -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#FFFFFF;stop-opacity:0"/>
+    </radialGradient>
+    <!-- 阴影 -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1E1B4B" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="108" height="108" rx="24" fill="url(#bg)"/>
+
+  <!-- 装饰圆环（脉冲感） -->
+  <circle cx="54" cy="52" r="36" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5"/>
+  <circle cx="54" cy="52" r="28" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+  <!-- 点击光晕 -->
+  <circle cx="54" cy="52" r="20" fill="url(#glow)"/>
+
+  <!-- 手指图标（简化触摸手势） -->
+  <g filter="url(#shadow)">
+    <!-- 手指主体 -->
+    <path d="M 44 62 L 44 40 C 44 37 47 35 50 35 C 53 35 56 37 56 40 L 56 52 
+             L 56 40 C 56 37 59 35 62 35 C 65 35 68 37 68 40 L 68 50
+             L 68 42 C 68 39 71 37 74 37 C 77 37 78 39 78 42 L 78 56
+             C 78 66 70 76 60 76 L 50 76 C 42 76 36 70 36 62 L 36 52
+             C 36 49 39 47 42 47 C 44 47 44 49 44 52 Z"
+          fill="#FFFFFF"/>
+    <!-- 手指关节线条 -->
+    <line x1="44" y1="50" x2="44" y2="50" stroke="#3B82F6" stroke-width="0.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- 点击涟漪（表示连续点击） -->
+  <circle cx="54" cy="78" r="4" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.2"/>
+  <circle cx="54" cy="78" r="7" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.8"/>
+
+  <!-- 速度线条（左上角装饰） -->
+  <line x1="22" y1="28" x2="32" y2="28" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="26" y1="34" x2="34" y2="34" stroke="rgba(255,255,255,0.25)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="20" y1="22" x2="26" y2="22" stroke="rgba(255,255,255,0.15)" stroke-width="1" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7C3AED"/>
+      <stop offset="50%" style="stop-color:#4F46E5"/>
+      <stop offset="100%" style="stop-color:#2563EB"/>
+    </linearGradient>
+    <linearGradient id="cursor" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="100%" style="stop-color:#E0E7FF"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1E1B4B" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="108" height="108" rx="26" fill="url(#bg)"/>
+
+  <!-- 装饰：微妙的圆点网格 -->
+  <g opacity="0.06">
+    <circle cx="20" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="34" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="48" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="62" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="76" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="20" r="1.5" fill="#fff"/>
+    <circle cx="20" cy="34" r="1.5" fill="#fff"/>
+    <circle cx="20" cy="48" r="1.5" fill="#fff"/>
+    <circle cx="20" cy="62" r="1.5" fill="#fff"/>
+    <circle cx="20" cy="76" r="1.5" fill="#fff"/>
+    <circle cx="20" cy="90" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="34" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="48" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="62" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="76" r="1.5" fill="#fff"/>
+    <circle cx="90" cy="90" r="1.5" fill="#fff"/>
+  </g>
+
+  <!-- 点击涟漪 -->
+  <circle cx="54" cy="56" r="32" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="54" cy="56" r="24" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2"/>
+  <circle cx="54" cy="56" r="16" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+
+  <!-- 鼠标光标 -->
+  <g filter="url(#shadow)" transform="translate(38, 28) rotate(8, 16, 24)">
+    <path d="M 0 0 L 0 38 L 10 28 L 18 42 L 24 39 L 16 25 L 28 22 Z" 
+          fill="url(#cursor)" stroke="rgba(255,255,255,0.8)" stroke-width="0.5"/>
+    <!-- 光标内部分割线 -->
+    <line x1="0" y1="0" x2="16" y2="16" stroke="rgba(99,102,241,0.3)" stroke-width="1"/>
+  </g>
+
+  <!-- 点击闪光点 -->
+  <g filter="url(#glow)">
+    <circle cx="54" cy="56" r="3.5" fill="#FFFFFF"/>
+    <circle cx="54" cy="56" r="6" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.2"/>
+  </g>
+
+  <!-- ⚡ 速度感装饰线 -->
+  <g opacity="0.5">
+    <line x1="72" y1="32" x2="82" y2="30" stroke="#FDE68A" stroke-width="2" stroke-linecap="round"/>
+    <line x1="74" y1="38" x2="80" y2="37" stroke="#FDE68A" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+</svg>
